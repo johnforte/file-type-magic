@@ -21,6 +21,8 @@
 - `bmp`
 - `tar`
 
+`detectFileType` returns the canonical labels above. `matchesFileType` also accepts common aliases, dot-prefixed extensions, and MIME types such as `jpg`, `.png`, `image/jpeg`, and `application/x-gzip`.
+
 ## Prerequisites
 
 Install the wasm target and `wasm-pack` if they are not already available:
@@ -146,7 +148,7 @@ Reads only the first `requiredBytesForDetection` bytes from a binary stream and 
 
 ### `matchesFileType(bytes: Uint8Array, expected: string): boolean`
 
-Returns `true` when the detected type matches `expected`.
+Returns `true` when the detected type matches `expected`, including canonical labels, common aliases, dot-prefixed extensions, and MIME types.
 
 ### `matchesFileTypeFromStream(source: ReadableStream | AsyncIterable, expected: string): Promise<boolean>`
 
