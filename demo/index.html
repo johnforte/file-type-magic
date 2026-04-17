@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>file-type-magic Browser Demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0f172a;
+        color: #e2e8f0;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at top, rgba(56, 189, 248, 0.18), transparent 30%),
+          linear-gradient(180deg, #0f172a 0%, #020617 100%);
+      }
+
+      main {
+        width: min(720px, calc(100vw - 32px));
+        padding: 32px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 20px;
+        background: rgba(15, 23, 42, 0.78);
+        backdrop-filter: blur(18px);
+        box-shadow: 0 24px 80px rgba(2, 6, 23, 0.45);
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-size: clamp(2rem, 4vw, 2.8rem);
+      }
+
+      p {
+        margin: 0 0 20px;
+        color: #cbd5e1;
+        line-height: 1.5;
+      }
+
+      .row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+      }
+
+      input,
+      button {
+        font: inherit;
+      }
+
+      input[type="file"] {
+        flex: 1 1 280px;
+        padding: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.9);
+        color: inherit;
+      }
+
+      button {
+        border: 0;
+        border-radius: 12px;
+        padding: 12px 16px;
+        font-weight: 700;
+        background: linear-gradient(135deg, #22c55e, #06b6d4);
+        color: #020617;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      dl {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 10px 16px;
+        margin: 20px 0 0;
+      }
+
+      dt {
+        color: #94a3b8;
+      }
+
+      dd {
+        margin: 0;
+        word-break: break-word;
+      }
+
+      code {
+        padding: 2px 6px;
+        border-radius: 6px;
+        background: rgba(15, 23, 42, 0.95);
+      }
+
+      .status {
+        min-height: 24px;
+        margin-top: 12px;
+        color: #93c5fd;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "file-type-magic": "../dist/index.mjs"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main>
+      <h1>file-type-magic</h1>
+      <p>
+        Browser consumer demo for the Vite-packaged build. Pick a local file and the wasm module
+        will inspect just the first signature bytes from the file stream in the browser.
+      </p>
+
+      <div class="row">
+        <input id="file-input" type="file" />
+        <button id="inspect-button" type="button">Inspect File</button>
+      </div>
+
+      <div id="status" class="status"></div>
+
+      <dl>
+        <dt>File</dt>
+        <dd id="file-name">No file selected</dd>
+
+        <dt>Detected Type</dt>
+        <dd id="detected-type">-</dd>
+
+        <dt>Supported</dt>
+        <dd id="supported">-</dd>
+
+        <dt>API Used</dt>
+        <dd><code>import { detectFileTypeFromStream } from "file-type-magic"</code></dd>
+      </dl>
+    </main>
+
+    <script type="module">
+      import { detectFileTypeFromStream, requiredBytesForDetection } from "file-type-magic";
+
+      const fileInput = document.querySelector("#file-input");
+      const inspectButton = document.querySelector("#inspect-button");
+      const status = document.querySelector("#status");
+      const fileName = document.querySelector("#file-name");
+      const detectedType = document.querySelector("#detected-type");
+      const supported = document.querySelector("#supported");
+
+      async function inspectSelectedFile() {
+        const [file] = fileInput.files ?? [];
+
+        if (!file) {
+          status.textContent = "Choose a file first.";
+          return;
+        }
+
+        inspectButton.disabled = true;
+          status.textContent = `Streaming the first ${requiredBytesForDetection} bytes...`;
+
+        try {
+          const kind = await detectFileTypeFromStream(file.stream());
+
+          fileName.textContent = `${file.name} (${file.size.toLocaleString()} bytes)`;
+          detectedType.textContent = kind ?? "unknown";
+          supported.textContent = kind ? "true" : "false";
+          status.textContent = "Inspection complete.";
+        } catch (error) {
+          console.error(error);
+          status.textContent = "Failed to inspect file.";
+        } finally {
+          inspectButton.disabled = false;
+        }
+      }
+
+      inspectButton.addEventListener("click", inspectSelectedFile);
+      fileInput.addEventListener("change", inspectSelectedFile);
+    </script>
+  </body>
+</html>

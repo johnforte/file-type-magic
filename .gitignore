@@ -1,0 +1,6 @@
+/pkg
+/target
+.idea
+*.iml
+dist
+node_modules
