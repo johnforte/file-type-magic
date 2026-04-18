@@ -4,6 +4,7 @@ import {
   requiredBytesForDetection,
 } from "../dist/node.mjs";
 import { fileTypeFromBuffer, fileTypeFromStream } from "file-type";
+import fileTypeChecker from "file-type-checker";
 
 const encoder = new TextEncoder();
 const DEFAULT_BUFFER_ITERATIONS = 50_000;
@@ -12,6 +13,7 @@ const DEFAULT_WARMUP_ITERATIONS = 1_000;
 const DEFAULT_CHUNK_SIZE = 64;
 const SAMPLE_SIZE = 512;
 const UNKNOWN_LABEL = "unknown";
+const fileTypeCheckerUnsupportedLabels = new Set(["wasm", "gzip", "tar"]);
 
 const extensionAliases = new Map([
   ["jpg", "jpeg"],
@@ -143,6 +145,21 @@ function describeRelativeSpeed(left, right) {
   return `${faster.name} is ${formatRatio(faster.operationsPerSecond / slower.operationsPerSecond)} faster than ${slower.name}.`;
 }
 
+function describeRelativeSpeeds(rows) {
+  if (rows.length <= 1) {
+    return "Need at least two implementations for a throughput comparison.";
+  }
+
+  const sortedRows = [...rows].sort(
+    (left, right) => right.operationsPerSecond - left.operationsPerSecond,
+  );
+
+  return sortedRows
+    .slice(1)
+    .map((row) => describeRelativeSpeed(sortedRows[0], row))
+    .join(" ");
+}
+
 function printTable(title, rows) {
   const headers = ["Implementation", "Iterations", "Total ms", "Avg us/op", "Ops/sec"];
   const tableRows = rows.map((row) => [
@@ -179,12 +196,16 @@ function summarize(name, iterations, elapsedNanoseconds, checksum) {
   };
 }
 
-async function runBenchmark(name, iterations, detect) {
+function detectFileTypeWithChecker(bytes) {
+  return normalizeLabel(fileTypeChecker.detectFile(bytes)?.extension);
+}
+
+async function runBenchmark(name, iterations, detect, benchmarkSamples = samples) {
   let checksum = 0;
   const startedAt = process.hrtime.bigint();
 
   for (let index = 0; index < iterations; index += 1) {
-    const sample = samples[index % samples.length];
+    const sample = benchmarkSamples[index % benchmarkSamples.length];
     const label = await detect(sample);
     checksum += label?.length ?? 0;
   }
@@ -198,16 +219,19 @@ async function warmup(iterations) {
     return;
   }
 
-  await runBenchmark("warmup wasm buffer", iterations, async (sample) => detectFileType(sample.bytes));
+  await runBenchmark("warmup wasm buffer", iterations, async (sample) => detectFileType(sample.bytes), bufferSamples);
   await runBenchmark("warmup file-type buffer", iterations, async (sample) => {
     return normalizeLabel((await fileTypeFromBuffer(sample.bytes))?.ext);
-  });
+  }, bufferSamples);
+  await runBenchmark("warmup file-type-checker buffer", iterations, async (sample) => {
+    return detectFileTypeWithChecker(sample.bytes);
+  }, bufferSamples);
   await runBenchmark("warmup wasm stream", iterations, async (sample) => {
     return detectFileTypeFromStream(createReadableStream(sample.chunks));
-  });
+  }, samples);
   await runBenchmark("warmup file-type stream", iterations, async (sample) => {
     return normalizeLabel((await fileTypeFromStream(createReadableStream(sample.chunks)))?.ext);
-  });
+  }, samples);
 }
 
 async function verifySamples() {
@@ -215,6 +239,9 @@ async function verifySamples() {
     const expected = getExpectedResult(sample.label);
     const wasmBuffer = detectFileType(sample.bytes);
     const fileTypeBuffer = normalizeLabel((await fileTypeFromBuffer(sample.bytes))?.ext);
+    const fileTypeCheckerBuffer = !fileTypeCheckerUnsupportedLabels.has(sample.label)
+      ? detectFileTypeWithChecker(sample.bytes)
+      : undefined;
     const wasmStream = await detectFileTypeFromStream(createReadableStream(sample.chunks));
     const fileTypeStream = normalizeLabel((await fileTypeFromStream(createReadableStream(sample.chunks)))?.ext);
 
@@ -224,6 +251,12 @@ async function verifySamples() {
 
     if (fileTypeBuffer !== expected) {
       throw new Error(`file-type buffer detection failed for ${sample.label}: expected ${expected ?? "undefined"}, got ${fileTypeBuffer ?? "undefined"}.`);
+    }
+
+    if (!fileTypeCheckerUnsupportedLabels.has(sample.label) && fileTypeCheckerBuffer !== expected) {
+      throw new Error(
+        `file-type-checker buffer detection failed for ${sample.label}: expected ${expected ?? "undefined"}, got ${fileTypeCheckerBuffer ?? "undefined"}.`,
+      );
     }
 
     if (wasmStream !== expected) {
@@ -260,26 +293,37 @@ const samples = [
   ...sample,
   chunks: chunkBytes(sample.bytes, chunkSize),
 }));
+const bufferSamples = samples.filter((sample) => !fileTypeCheckerUnsupportedLabels.has(sample.label));
+const bufferSampleSizes = bufferSamples.map((sample) => sample.bytes.byteLength);
 const sampleSizes = samples.map((sample) => sample.bytes.byteLength);
 
 async function main() {
-  console.log("file-type vs file-type-magic benchmark");
-  console.log(`Samples: ${samples.map((sample) => sample.label).join(", ")}`);
-  console.log(`Sample size range: ${Math.min(...sampleSizes)}-${Math.max(...sampleSizes)} bytes`);
+  console.log("file-type-magic vs file-type vs file-type-checker benchmark");
+  console.log(`Buffer samples: ${bufferSamples.map((sample) => sample.label).join(", ")}`);
+  console.log(`Stream samples: ${samples.map((sample) => sample.label).join(", ")}`);
+  console.log(`Buffer sample size range: ${Math.min(...bufferSampleSizes)}-${Math.max(...bufferSampleSizes)} bytes`);
+  console.log(`Stream sample size range: ${Math.min(...sampleSizes)}-${Math.max(...sampleSizes)} bytes`);
   console.log(`WASM stream prefix bytes: ${requiredBytesForDetection}`);
   console.log(`Chunk size: ${chunkSize}`);
+  console.log("file-type-checker does not expose a stream API, so it is benchmarked only for buffer detection.");
 
   await verifySamples();
   await warmup(warmupIterations);
 
   const wasmBuffer = await runBenchmark("WASM detectFileType", bufferIterations, async (sample) => {
     return detectFileType(sample.bytes);
-  });
+  }, bufferSamples);
   const fileTypeBuffer = await runBenchmark("file-type fromBuffer", bufferIterations, async (sample) => {
     return normalizeLabel((await fileTypeFromBuffer(sample.bytes))?.ext);
-  });
+  }, bufferSamples);
+  const fileTypeCheckerBuffer = await runBenchmark("file-type-checker detectFile", bufferIterations, async (sample) => {
+    return detectFileTypeWithChecker(sample.bytes);
+  }, bufferSamples);
 
-  if (wasmBuffer.checksum !== fileTypeBuffer.checksum) {
+  if (
+    wasmBuffer.checksum !== fileTypeBuffer.checksum ||
+    wasmBuffer.checksum !== fileTypeCheckerBuffer.checksum
+  ) {
     throw new Error("Buffer benchmark checksum mismatch between implementations.");
   }
 
@@ -294,11 +338,11 @@ async function main() {
     throw new Error("Stream benchmark checksum mismatch between implementations.");
   }
 
-  printTable("Buffer Benchmark", [wasmBuffer, fileTypeBuffer]);
-  console.log(describeRelativeSpeed(wasmBuffer, fileTypeBuffer));
+  printTable("Buffer Benchmark", [wasmBuffer, fileTypeBuffer, fileTypeCheckerBuffer]);
+  console.log(describeRelativeSpeeds([wasmBuffer, fileTypeBuffer, fileTypeCheckerBuffer]));
 
   printTable("Stream Benchmark", [wasmStream, fileTypeStream]);
-  console.log(describeRelativeSpeed(wasmStream, fileTypeStream));
+  console.log(describeRelativeSpeeds([wasmStream, fileTypeStream]));
   console.log("\nUse --buffer-iterations=... --stream-iterations=... --warmup=... --chunk-size=... to tune the run.");
 }
 
