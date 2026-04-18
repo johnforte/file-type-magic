@@ -1,6 +1,6 @@
 {
   "name": "file-type-magic",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Rust + WebAssembly file type checker for npm",
   "license": "MIT",
   "main": "./dist/node.cjs",
