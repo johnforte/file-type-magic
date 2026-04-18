@@ -30,7 +30,7 @@ const nodeBuild = {
     sourcemap: true,
     target: "es2022",
     rollupOptions: {
-      external: ["node:module"],
+      external: ["node:fs", "node:url"],
       output: {
         exports: "named",
       },
