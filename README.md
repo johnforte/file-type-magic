@@ -1,12 +1,14 @@
 # file-type-magic
 
-`file-type-magic` is a small npm package scaffold backed by a Rust WebAssembly module. It checks file types from raw bytes using well-known file signatures.
+`file-type-magic` is a small npm package scaffold backed by a Rust WebAssembly module. It checks file types from raw bytes using well-known file signatures. Runs in broswer and node.
 
 ## What it does
 
 - Detects a file type from a byte buffer
 - Checks whether a buffer matches an expected file type
 - Runs the detection logic inside Rust and ships it through npm as WASM
+
+![Alt text](./screenshots/benchmark.png)
 
 ## Supported types
 
