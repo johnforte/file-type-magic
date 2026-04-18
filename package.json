@@ -29,7 +29,10 @@
       "require": "./dist/node.cjs"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "setup:wasm": "rustup target add wasm32-unknown-unknown",
     "build": "npm run clean:artifacts && npm run build:wasm:browser && npm run build:lib:browser && npm run build:wasm:node && npm run build:lib:node && npm run build:types",
@@ -61,6 +64,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.7.2",
+    "file-type": "^22.0.1",
     "typescript": "^5.9.3",
     "vite": "^8.0.8",
     "vite-plugin-wasm": "^3.6.0"
